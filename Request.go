@@ -3,7 +3,6 @@ package GoExpress
 import (
 	"sync"
 	"strings"
-	"errors"
 )
 
 type Request struct {
@@ -22,13 +21,13 @@ var requestPool = sync.Pool {
 }
 
 // getRequest(RAW_REQUEST) parses type, path, protocol, headers from RAW_REQUEST and returns Request object
-func getRequest(request string) (req *Request, closed bool, err error) {
+func getRequest(request string) (req *Request, closed bool, err bool) {
 	req = requestPool.Get().(*Request)
 	splitted_req := strings.Split(request, "\r\n")
 	headers := make(map[string]string)
 	req_first_ln := strings.Split(splitted_req[0], " ")
 	if len(req_first_ln) < 3 {
-		err = errors.New("Error while parsing 1st line of request")
+		err = true
 		return
 	}
 	req.Type = req_first_ln[0]

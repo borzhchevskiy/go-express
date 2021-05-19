@@ -2,11 +2,16 @@ package GoExpress
 
 import (
 	"os"
+	"fmt"
 	"net"
 	"strconv"
-	log "github.com/sirupsen/logrus"
 	"crypto/tls"
+	"github.com/joomcode/errorx"
 	"github.com/borzhchevskiy/go-express/internal/static"
+)
+
+var (
+	ServerErr = errorx.NewNamespace("server")
 )
 
 type Server struct {
@@ -20,17 +25,7 @@ type Server struct {
 }
 
 // Express(Host, Port) returns a Server object
-func Express(host string, port int, logLevel string) *Server {
-	switch logLevel {
-		case "info":
-			log.SetLevel(log.InfoLevel)
-		case "warn":
-			log.SetLevel(log.WarnLevel)
-		case "fatal":
-			log.SetLevel(log.FatalLevel)
-		default:
-			log.SetLevel(log.FatalLevel)
-	}
+func Express(host string, port int) *Server {
 	s := &Server {
 		Host:       host,
 		Port:       port,
@@ -48,17 +43,11 @@ func (s *Server) Use(middleware func(req *Request, res *Response)) {
 }
 
 // Server.Listen() listens for connections
-func (s *Server) Listen() {
-	log.WithFields(log.Fields{
-		"GET": s.GET,
-		"POST": s.POST,
-		"STATIC": s.STATIC,
-
-	}).Info("")
+func (s *Server) Listen() error {
 	var err error
 	s.Socket, err = net.Listen("tcp4", s.Host + ":" + strconv.Itoa(s.Port))
 	if err != nil {
-		log.Warn(err)
+		return errorx.Decorate(err, "failed to start server")
 		os.Exit(1)
 	}
 	for {
@@ -66,31 +55,33 @@ func (s *Server) Listen() {
 		go s.serveClient(c)
 	}
 	s.Socket.Close()
+	return nil
 }
 
 // Server.ListenTLS(CERTIFICATE, KEY) listens for connections, and process it with tls
-func (s *Server) ListenTLS(certificate string, key string) {
+func (s *Server) ListenTLS(certificate string, key string) error {
 	cert, err := tls.LoadX509KeyPair(certificate, key)
 	if err != nil {
-		log.Warn(err)
+		return errorx.Decorate(err, "failed to load tls keys")
 		os.Exit(1)
 	}
 	config := &tls.Config{Certificates: []tls.Certificate{cert}}
 
 	sock, err := tls.Listen("tcp4", s.Host + ":" + strconv.Itoa(s.Port), config)
 	if err != nil {
-		log.Warn(err)
+		return errorx.Decorate(err, "failed to start server")
 		os.Exit(1)
 	}
 
 	for {
 		c, err := sock.Accept()
 		if err != nil {
-			log.Warn(err)
+			continue
 		}
 		go s.serveClient(c)
 	}
 	sock.Close()
+	return nil
 }
 
 // Server.Static(PATH, REAL_PATH) serves static files
@@ -124,7 +115,8 @@ func (s *Server) serveClient(c net.Conn) {
 		c.Read(buf)
 		req, closed, err := getRequest(string(buf))
 		res := getResponse(c)
-		if err != nil {
+		if err == true {
+			fmt.Println(err)
 			res.Error(res.BadRequest("Cannot Proceed " + req.Path + "\nBad Request"))
 			return
 		}
@@ -142,7 +134,7 @@ func (s *Server) serveClient(c net.Conn) {
 	}
 }
 
-func (s *Server) processRequest(closed bool, c net.Conn, req *Request, res *Response) {
+func (s *Server) processRequest(closed bool, c net.Conn, req *Request, res *Response) error {
 	switch req.Type {
 		case "GET":
 			Static, filePath := static.ProcessStatic(s.STATIC, req.Path)
@@ -155,7 +147,7 @@ func (s *Server) processRequest(closed bool, c net.Conn, req *Request, res *Resp
 			} else if Static {
 				err := res.SendFile(filePath)
 				if err != nil {
-					log.Warn(err)
+					return errorx.Decorate(err, "failed to send static file")
 				}
 			} else {
 				res.Error(res.NotFound("Cannot Proceed " + req.Path + "\nNot Found"))
@@ -171,6 +163,7 @@ func (s *Server) processRequest(closed bool, c net.Conn, req *Request, res *Resp
 				res.Error(res.NotFound("Cannot Proceed " + req.Path + "\nNot Found"))
 			}
 	}
+	return nil
 }
 
 func (s *Server) callMiddleware(req *Request, res *Response) (*Request, *Response) {
