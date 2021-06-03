@@ -11,7 +11,7 @@ type Request struct {
 	Proto      string           
 	Headers    map[string]string
 	Body       map[string]string
-	Variables  map[string]string
+	Params     map[interface{}]interface{}
 }
 
 var requestPool = sync.Pool {

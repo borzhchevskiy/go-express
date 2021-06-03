@@ -2,11 +2,11 @@ package GoExpress
 
 import (
 	"os"
-	"fmt"
 	"net"
 	"strconv"
 	"crypto/tls"
 	"github.com/joomcode/errorx"
+	pathToRegexp "github.com/soongo/path-to-regexp"
 	"github.com/borzhchevskiy/go-express/internal/static"
 )
 
@@ -20,8 +20,8 @@ type Server struct {
 	Socket       net.Listener
 	STATIC       map[string]string
 	Middleware   []func(req *Request, res *Response)
-	GET          map[string]func(req *Request, res *Response)
-	POST         map[string]func(req *Request, res *Response)
+	GET          [][]interface{}
+	POST         [][]interface{}
 }
 
 // Express(Host, Port) returns a Server object
@@ -31,8 +31,8 @@ func Express(host string, port int) *Server {
 		Port:       port,
 		STATIC:     make(map[string]string),
 		Middleware: make([]func(req *Request, res *Response), 0),
-		GET:        make(map[string]func(req *Request, res *Response)),
-		POST:       make(map[string]func(req *Request, res *Response)),
+		GET:        make([][]interface{}, 0),
+		POST:       make([][]interface{}, 0),
 	}
 	return s
 }
@@ -97,7 +97,10 @@ func (s *Server) Get(path string, handler func(req *Request, res *Response)) {
 	if path[len(path)-1] != []byte("/")[0] {
 		path += "/"
 	}
-	s.GET[path] = handler
+	match := pathToRegexp.MustMatch(path, &pathToRegexp.Options{Decode: func(str string, token interface{}) (string, error) {
+		return pathToRegexp.DecodeURIComponent(str)
+	}})
+	s.GET = append(s.GET, []interface{}{match, handler})
 }
 
 // Server.Post(PATH, HANDLER) appends given handler to Post routes
@@ -105,7 +108,10 @@ func (s *Server) Post(path string, handler func(req *Request, res *Response)) {
 	if path[len(path)-1] != []byte("/")[0] {
 		path += "/"
 	}
-	s.POST[path] = handler
+	match := pathToRegexp.MustMatch(path, &pathToRegexp.Options{Decode: func(str string, token interface{}) (string, error) {
+		return pathToRegexp.DecodeURIComponent(str)
+	}})
+	s.POST = append(s.POST, []interface{}{match, handler})
 }
 
 // Server.serveClient(CONN) its a private method that process request in goroutine
@@ -116,7 +122,6 @@ func (s *Server) serveClient(c net.Conn) {
 		req, closed, err := getRequest(string(buf))
 		res := getResponse(c)
 		if err == true {
-			fmt.Println(err)
 			res.Error(res.BadRequest("Cannot Proceed " + req.Path + "\nBad Request"))
 			return
 		}
@@ -136,32 +141,28 @@ func (s *Server) serveClient(c net.Conn) {
 
 func (s *Server) processRequest(closed bool, c net.Conn, req *Request, res *Response) error {
 	switch req.Type {
-		case "GET":
-			Static, filePath := static.ProcessStatic(s.STATIC, req.Path)
-			if _, OK := s.GET[req.Path]; OK {
+	case "GET":
+		Static, filePath := static.ProcessStatic(s.STATIC, req.Path)
+		if Static {
+			err := res.SendFile(filePath)
+			if err != nil {
+				return errorx.Decorate(err, "failed to send static file")
+			} else {
+				return nil
+			}
+		}
+		for _, v := range s.GET {
+			if match, _ := v[0].(func(string)(*pathToRegexp.MatchResult, error))(req.Path); match != nil {
+				req.Params = match.Params
 				s.callMiddleware(req, res)
-				s.GET[req.Path](req, res)
+				v[1].(func(req *Request, res *Response))(req, res)
 				if closed {
 					c.Close()
+					return nil
 				}
-			} else if Static {
-				err := res.SendFile(filePath)
-				if err != nil {
-					return errorx.Decorate(err, "failed to send static file")
-				}
-			} else {
-				res.Error(res.NotFound("Cannot Proceed " + req.Path + "\nNot Found"))
 			}
-		case "POST":
-			if _, OK := s.POST[req.Path]; OK {
-				s.callMiddleware(req, res)
-				s.POST[req.Path](req, res)
-				if closed {
-					c.Close()
-				}
-			} else {
-				res.Error(res.NotFound("Cannot Proceed " + req.Path + "\nNot Found"))
-			}
+		}
+		res.Error(res.NotFound("Cannot Proceed " + req.Path + "\nNot Found"))
 	}
 	return nil
 }

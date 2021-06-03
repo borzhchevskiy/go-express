@@ -21,7 +21,7 @@ func main() {
 ## Cookies
 
 ```go
-App.Get("/add/", func(req *Express.Request, res *Express.Response){
+App.Get("/add", func(req *Express.Request, res *Express.Response){
 	res.SetCookie(&Express.Cookie {
 		Name: "Hello",
 		Value: "World",
@@ -29,7 +29,7 @@ App.Get("/add/", func(req *Express.Request, res *Express.Response){
 	res.Send("Cookie added")
 })
 
-App.Get("/del/", func(req *Express.Request, res *Express.Response){
+App.Get("/del", func(req *Express.Request, res *Express.Response){
 	res.DelCookie("Hello")
 	res.Send("Cookie deleted")
 })
@@ -40,6 +40,14 @@ App.Get("/del/", func(req *Express.Request, res *Express.Response){
 ```go
 App.Static("/css", "./static/css")
 App.Static("/html", "./static/html")
+```
+
+## Parameters
+
+```go
+App.Get("/hello/:name", func(req *Express.Request, res *Express.Response){
+	res.Send("Hello, " + req.Params["name"].(string))
+})
 ```
 
 ## Installation
