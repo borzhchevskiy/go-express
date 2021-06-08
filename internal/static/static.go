@@ -10,7 +10,7 @@ func ProcessStatic(staticMap map[string]string, path string) (bool, string) {
 	splittedPath := strings.Split(path, "/")
 	for k, v := range staticMap {
 		splittedKey = strings.Split(k, "/")
-		if len(splittedKey) == len(splittedPath[:len(splittedKey)]) {
+		if len(splittedKey) == len(splittedPath[:len(splittedKey)-1]) {
 			equal := reflect.DeepEqual(splittedPath[:len(splittedKey)-1], splittedKey[:len(splittedKey)-1])
 			if equal {
 				var filepath string
