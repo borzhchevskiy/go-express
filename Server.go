@@ -3,6 +3,7 @@ package GoExpress
 import (
 	"os"
 	"net"
+	_ "fmt"
 	"strconv"
 	"crypto/tls"
 	"github.com/joomcode/errorx"
@@ -94,9 +95,6 @@ func (s *Server) Static(path string, real_path string) {
 
 // Server.Get(PATH, HANDLER) appends given handler to Get routes
 func (s *Server) Get(path string, handler func(req *Request, res *Response)) {
-	if path[len(path)-1] != []byte("/")[0] {
-		path += "/"
-	}
 	match := pathToRegexp.MustMatch(path, &pathToRegexp.Options{Decode: func(str string, token interface{}) (string, error) {
 		return pathToRegexp.DecodeURIComponent(str)
 	}})
@@ -105,9 +103,6 @@ func (s *Server) Get(path string, handler func(req *Request, res *Response)) {
 
 // Server.Post(PATH, HANDLER) appends given handler to Post routes
 func (s *Server) Post(path string, handler func(req *Request, res *Response)) {
-	if path[len(path)-1] != []byte("/")[0] {
-		path += "/"
-	}
 	match := pathToRegexp.MustMatch(path, &pathToRegexp.Options{Decode: func(str string, token interface{}) (string, error) {
 		return pathToRegexp.DecodeURIComponent(str)
 	}})
@@ -151,18 +146,26 @@ func (s *Server) processRequest(closed bool, c net.Conn, req *Request, res *Resp
 				return nil
 			}
 		}
+		var Match *pathToRegexp.MatchResult
+		var found bool
 		for _, v := range s.GET {
-			if match, _ := v[0].(func(string)(*pathToRegexp.MatchResult, error))(req.Path); match != nil {
-				req.Params = match.Params
+			Match, _ = v[0].(func(string)(*pathToRegexp.MatchResult, error))(req.Path)
+			if Match != nil {
+				found = true
+				req.Params = Match.Params
 				s.callMiddleware(req, res)
 				v[1].(func(req *Request, res *Response))(req, res)
 				if closed {
 					c.Close()
 					return nil
+				} else {
+					continue
 				}
 			}
 		}
-		res.Error(res.NotFound("Cannot Proceed " + req.Path + "\nNot Found"))
+		if !found {
+			res.Error(res.NotFound("Cannot Proceed " + req.Path + "\nNot Found"))
+		}
 	}
 	return nil
 }

@@ -71,6 +71,13 @@ func (res *Response) DelCookie(name string) {
 	res.Header("Set-Cookie", name + "=0; Max-Age=0")
 }
 
+// Response.Redirect(TO) redirect user to given path
+func (res *Response) Redirect(to string) {
+	res.Statuscode = 301
+	res.Statusmsg = "Moved Permanently"
+	res.Header("location", to)
+}
+
 // Response.Error(NAME, MESSAGE) sends response with error to client
 func (res *Response) Error(status [3]string) {
 	res.Proto = "HTTP/1.1"
