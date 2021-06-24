@@ -3,7 +3,6 @@ package GoExpress
 import (
 	"os"
 	"net"
-	_ "fmt"
 	"strconv"
 	"crypto/tls"
 	"github.com/joomcode/errorx"
@@ -87,8 +86,11 @@ func (s *Server) ListenTLS(certificate string, key string) error {
 
 // Server.Static(PATH, REAL_PATH) serves static files
 func (s *Server) Static(path string, real_path string) {
-	if path[len(path)-1] != []byte("/")[0] {
-		path += "/"
+	if path[len(path)-1] == []byte("/")[0] {
+		path = string(path[:len(path)-1])
+	}
+	if real_path[len(real_path)-1] == []byte("/")[0] {
+		real_path = string(real_path[:len(real_path)-1])
 	}
 	s.STATIC[path] = real_path
 }
@@ -141,6 +143,7 @@ func (s *Server) processRequest(closed bool, c net.Conn, req *Request, res *Resp
 		if Static {
 			err := res.SendFile(filePath)
 			if err != nil {
+				res.Error(res.NotFound("Cannot Proceed " + req.Path + "\nFile Not Found"))
 				return errorx.Decorate(err, "failed to send static file")
 			} else {
 				return nil
