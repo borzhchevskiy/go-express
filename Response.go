@@ -8,10 +8,12 @@ import (
 	"strings"
 	"sync"
 	"bytes"
+	hmap "github.com/cornelk/hashmap"
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/borzhchevskiy/go-express/internal/status"
 )
 
+// Response type
 type Response struct {
 	Proto      string
 	Statuscode int
@@ -20,6 +22,7 @@ type Response struct {
 	body       string
 	socket     net.Conn
 	status.Status
+	server     *Server
 }
 
 var responsePool = sync.Pool {
@@ -28,9 +31,10 @@ var responsePool = sync.Pool {
 	},
 }
 
-// newResponse(CONN) creates a basic Response objects and returns it
-func getResponse(conn net.Conn) *Response {
+// newResponse(conn net.Conn, s *Server) (*Response) creates a basic Response object and returns it
+func getResponse(conn net.Conn, s *Server) *Response {
 	res := responsePool.Get().(*Response)
+	res.server = s
 	res.Headers = make(map[string]string)
 	res.socket = conn
 	return res
@@ -40,7 +44,7 @@ func putResponse(response *Response) {
 	responsePool.Put(response)
 }
 
-// Response.toString() its a private method that returns a string, send it client
+// Response.toString() (string) returns a string to send it to client
 func (res *Response) toString() string {
 	var headers strings.Builder
 	for k, v := range res.Headers {
@@ -53,12 +57,12 @@ func (res *Response) toString() string {
 	return response
 }
 
-// Response.Header(KEY, VALUE) sets header with given name and value
+// Response.Header(key string, value string) sets header with given name and value
 func (res *Response) Header(key string, value string) {
 	res.Headers[key] = value
 }
 
-// Response.SetCookie(COOKIE) sets cookie, it take data from cookie object
+// Response.SetCookie(c *Cookie) sets cookie, it takes data from cookie object
 func (res *Response) SetCookie(c *Cookie) {
 	if c.MaxAge == "" {
 		c.MaxAge = "86400"
@@ -66,19 +70,19 @@ func (res *Response) SetCookie(c *Cookie) {
 	res.Header("Set-Cookie", c.String())
 }
 
-// Response.DelCookie(NAME) immediately deletes cookie
+// Response.DelCookie(name string) immediately deletes cookie
 func (res *Response) DelCookie(name string) {
 	res.Header("Set-Cookie", name + "=0; Max-Age=0")
 }
 
-// Response.Redirect(TO) redirect user to given path
+// Response.Redirect(to stirng) redirect user to given path
 func (res *Response) Redirect(to string) {
 	res.Statuscode = 301
 	res.Statusmsg = "Moved Permanently"
 	res.Header("location", to)
 }
 
-// Response.Error(NAME, MESSAGE) sends response with error to client
+// Response.Error(status []string) sends response with error to client
 func (res *Response) Error(status [3]string) {
 	res.Proto = "HTTP/1.1"
 	res.Statuscode, _ = strconv.Atoi(status[0])
@@ -93,7 +97,7 @@ func (res *Response) Error(status [3]string) {
 	res.socket.Close()
 }
 
-// Response.Send(DATA) sends data to client
+// Response.Send(body string) sends data to client
 func (res *Response) Send(body string) {
 	res.Proto = "HTTP/1.1"
 	if res.Statuscode == 0 {
@@ -110,7 +114,7 @@ func (res *Response) Send(body string) {
 	res.socket.Write([]byte(res.toString()))
 }
 
-// Response.SendFile(FILE_NAME) sends file to client
+// Response.SendFile(path string) (error) sends file to client
 func (res *Response) SendFile(path string) error {
 	res.Proto = "HTTP/1.1"
 	if res.Statuscode == 0 {
@@ -119,12 +123,28 @@ func (res *Response) SendFile(path string) error {
 	if res.Statusmsg == "" {
 		res.Statusmsg = "OK"
 	}
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
+	data, ok := res.server.FileCache.Get(path)
 	var body bytes.Buffer
-	body.ReadFrom(file)
+	if ok {
+		body = *bytes.NewBuffer(data.([]byte))
+	} else {
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		body.ReadFrom(file)
+		res.server.FileCache.Set(path, body.Bytes())
+		go func(){
+			for {
+				if res.server.Config.CacheMaxAge == 0 {
+					return
+				}
+				time.Sleep(time.Duration(res.server.Config.CacheMaxAge) * time.Second)
+				res.server.FileCache = &hmap.HashMap{}
+			}
+		}()
+	}
+	
 	res.body = body.String()
 	res.Header("Server", "GoExpress")
 	res.Header("Date", time.Now().In(time.FixedZone("GMT", 0)).Format(time.RFC1123))

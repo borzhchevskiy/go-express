@@ -8,12 +8,18 @@ import (
 	"github.com/joomcode/errorx"
 	pathToRegexp "github.com/soongo/path-to-regexp"
 	"github.com/borzhchevskiy/go-express/internal/static"
+	hmap "github.com/cornelk/hashmap"
 )
 
-var (
-	ServerErr = errorx.NewNamespace("server")
-)
+// Type to configure the server
+type Config struct {
+	Host  string
+	Port  int
+	Cache bool
+	CacheMaxAge int
+}
 
+// Server type
 type Server struct {
 	Host         string
 	Port         int
@@ -22,27 +28,31 @@ type Server struct {
 	Middleware   []func(req *Request, res *Response)
 	GET          [][]interface{}
 	POST         [][]interface{}
+	FileCache    *hmap.HashMap
+	Config       *Config
 }
 
-// Express(Host, Port) returns a Server object
-func Express(host string, port int) *Server {
+// Express(cfg *Config) (*Server) returns a Server object
+func Express(cfg *Config) *Server {
 	s := &Server {
-		Host:       host,
-		Port:       port,
+		Host:       cfg.Host,
+		Port:       cfg.Port,
 		STATIC:     make(map[string]string),
 		Middleware: make([]func(req *Request, res *Response), 0),
 		GET:        make([][]interface{}, 0),
 		POST:       make([][]interface{}, 0),
+		FileCache:  &hmap.HashMap{},
+		Config: cfg,
 	}
 	return s
 }
 
-// Server.Use(Middleware) appends given middleware to server
+// Server.Use(middleware func(req *Request, res *Response)) appends given middleware to server
 func (s *Server) Use(middleware func(req *Request, res *Response)) {
 	s.Middleware = append(s.Middleware, middleware)
 }
 
-// Server.Listen() listens for connections
+// Server.Listen() (error) listens for connections
 func (s *Server) Listen() error {
 	var err error
 	s.Socket, err = net.Listen("tcp4", s.Host + ":" + strconv.Itoa(s.Port))
@@ -58,7 +68,7 @@ func (s *Server) Listen() error {
 	return nil
 }
 
-// Server.ListenTLS(CERTIFICATE, KEY) listens for connections, and process it with tls
+// Server.ListenTLS(certificate string, key string) listens for connections, and process it with tls
 func (s *Server) ListenTLS(certificate string, key string) error {
 	cert, err := tls.LoadX509KeyPair(certificate, key)
 	if err != nil {
@@ -84,7 +94,7 @@ func (s *Server) ListenTLS(certificate string, key string) error {
 	return nil
 }
 
-// Server.Static(PATH, REAL_PATH) serves static files
+// Server.Static(path string, real_path string) serves static files
 func (s *Server) Static(path string, real_path string) {
 	if path[len(path)-1] == []byte("/")[0] {
 		path = string(path[:len(path)-1])
@@ -95,7 +105,7 @@ func (s *Server) Static(path string, real_path string) {
 	s.STATIC[path] = real_path
 }
 
-// Server.Get(PATH, HANDLER) appends given handler to Get routes
+// Server.Get(path string, handler func(req *Request, res *Response)) appends given handler to GET routes
 func (s *Server) Get(path string, handler func(req *Request, res *Response)) {
 	match := pathToRegexp.MustMatch(path, &pathToRegexp.Options{Decode: func(str string, token interface{}) (string, error) {
 		return pathToRegexp.DecodeURIComponent(str)
@@ -103,7 +113,7 @@ func (s *Server) Get(path string, handler func(req *Request, res *Response)) {
 	s.GET = append(s.GET, []interface{}{match, handler})
 }
 
-// Server.Post(PATH, HANDLER) appends given handler to Post routes
+// Server.Post(path string, handler func(req *Request, res *Response)) appends given handler to POST routes
 func (s *Server) Post(path string, handler func(req *Request, res *Response)) {
 	match := pathToRegexp.MustMatch(path, &pathToRegexp.Options{Decode: func(str string, token interface{}) (string, error) {
 		return pathToRegexp.DecodeURIComponent(str)
@@ -111,13 +121,13 @@ func (s *Server) Post(path string, handler func(req *Request, res *Response)) {
 	s.POST = append(s.POST, []interface{}{match, handler})
 }
 
-// Server.serveClient(CONN) its a private method that process request in goroutine
+// Server.serveClient(c net.Conn) processes request in goroutine
 func (s *Server) serveClient(c net.Conn) {
 	for {
 		buf := make([]byte, 1024)
 		c.Read(buf)
 		req, closed, err := getRequest(string(buf))
-		res := getResponse(c)
+		res := getResponse(c, s)
 		if err == true {
 			res.Error(res.BadRequest("Cannot Proceed " + req.Path + "\nBad Request"))
 			return
@@ -136,6 +146,7 @@ func (s *Server) serveClient(c net.Conn) {
 	}
 }
 
+// Server.processRequest(closed bool, c net.Conn, req *Request, res *Response) (error) MAGIC IS DONE HERE
 func (s *Server) processRequest(closed bool, c net.Conn, req *Request, res *Response) error {
 	switch req.Type {
 	case "GET":
@@ -173,6 +184,7 @@ func (s *Server) processRequest(closed bool, c net.Conn, req *Request, res *Resp
 	return nil
 }
 
+// Server.callMiddleware(req *Request, res *Response) (*Request, *Response) calls each middleware
 func (s *Server) callMiddleware(req *Request, res *Response) (*Request, *Response) {
 	for _, v := range s.Middleware {
 		v(req, res)

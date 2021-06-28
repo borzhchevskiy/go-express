@@ -5,6 +5,7 @@ import (
 	"strings"
 )
 
+// Request type
 type Request struct {
 	Type       string           
 	Path       string           
@@ -20,7 +21,7 @@ var requestPool = sync.Pool {
 	},
 }
 
-// getRequest(RAW_REQUEST) parses type, path, protocol, headers from RAW_REQUEST and returns Request object
+// getRequest(request string) (req *Request, closed bool, err bool) parses type, path, protocol, headers from RAW_REQUEST and returns Request object
 func getRequest(request string) (req *Request, closed bool, err bool) {
 	req = requestPool.Get().(*Request)
 	splitted_req := strings.Split(request, "\r\n")
