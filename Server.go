@@ -13,10 +13,12 @@ import (
 
 // Type to configure the server
 type Config struct {
-	Host  string
-	Port  int
-	Cache bool
-	CacheMaxAge int
+	Host         string
+	Port         int
+	ReuseConn    bool
+	MaxReuseConn int
+	Cache        bool
+	CacheMaxAge  int
 }
 
 // Server type
@@ -62,7 +64,7 @@ func (s *Server) Listen() error {
 	}
 	for {
 		c, _ := s.Socket.Accept()
-		go s.serveClient(c)
+		go s.serveClient(c, s.Config.MaxReuseConn)
 	}
 	s.Socket.Close()
 	return nil
@@ -88,7 +90,7 @@ func (s *Server) ListenTLS(certificate string, key string) error {
 		if err != nil {
 			continue
 		}
-		go s.serveClient(c)
+		go s.serveClient(c, s.Config.MaxReuseConn)
 	}
 	sock.Close()
 	return nil
@@ -122,8 +124,12 @@ func (s *Server) Post(path string, handler func(req *Request, res *Response)) {
 }
 
 // Server.serveClient(c net.Conn) processes request in goroutine
-func (s *Server) serveClient(c net.Conn) {
-	for {
+func (s *Server) serveClient(c net.Conn, reuse int) {
+	var finished bool
+	if reuse == 0 {
+		reuse = 15
+	}
+	for i := 0; i < reuse; i++ {
 		buf := make([]byte, 1024)
 		c.Read(buf)
 		req, closed, err := getRequest(string(buf))
@@ -137,12 +143,37 @@ func (s *Server) serveClient(c net.Conn) {
 			s.processRequest(closed, c, req, res)
 			putRequest(req)
 			putResponse(res)
+			finished = true
 			break
 		} else {
-			res.Header("Connection", "keep-alive")
-			s.processRequest(closed, c, req, res)
-			continue
+			if !s.Config.ReuseConn {
+				res.Header("Connection", "close")
+				s.processRequest(closed, c, req, res)
+				finished = true
+				c.Close()
+				break
+			} else {
+				res.Header("Connection", "keep-alive")
+				s.processRequest(closed, c, req, res)
+				finished = false
+				continue
+			}
 		}
+	}
+	if finished {
+		c.Close()
+	} else {
+		buf := make([]byte, 1024)
+		c.Read(buf)
+		req, _, err := getRequest(string(buf))
+		res := getResponse(c, s)
+		if err == true {
+			res.Error(res.BadRequest("Cannot Proceed " + req.Path + "\nBad Request"))
+			return
+		}
+		res.Header("Connection", "close")
+		s.processRequest(true, c, req, res)
+		finished = true
 	}
 }
 
