@@ -1,6 +1,6 @@
 package status
 
-type Status struct {}
+type Status struct{}
 
 func (s Status) BadRequest(msg string) [3]string {
 	return [3]string{"400", "Bad Request", msg}

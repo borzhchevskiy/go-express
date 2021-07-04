@@ -1,16 +1,16 @@
-package GoExpress
+package goexpress
 
 import (
-	"os"
+	"bytes"
+	"github.com/borzhchevskiy/go-express/internal/status"
+	hmap "github.com/cornelk/hashmap"
+	"github.com/gabriel-vasile/mimetype"
 	"net"
-	"time"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
-	"bytes"
-	hmap "github.com/cornelk/hashmap"
-	"github.com/gabriel-vasile/mimetype"
-	"github.com/borzhchevskiy/go-express/internal/status"
+	"time"
 )
 
 // Response type
@@ -22,16 +22,15 @@ type Response struct {
 	body       string
 	socket     net.Conn
 	status.Status
-	server     *Server
+	server *Server
 }
 
-var responsePool = sync.Pool {
+var responsePool = sync.Pool{
 	New: func() interface{} {
 		return new(Response)
 	},
 }
 
-// newResponse(conn net.Conn, s *Server) (*Response) creates a basic Response object and returns it
 func getResponse(conn net.Conn, s *Server) *Response {
 	res := responsePool.Get().(*Response)
 	res.server = s
@@ -44,7 +43,6 @@ func putResponse(response *Response) {
 	responsePool.Put(response)
 }
 
-// Response.toString() (string) returns a string to send it to client
 func (res *Response) toString() string {
 	var headers strings.Builder
 	for k, v := range res.Headers {
@@ -57,12 +55,12 @@ func (res *Response) toString() string {
 	return response
 }
 
-// Response.Header(key string, value string) sets header with given name and value
+// Header (key string, value string) sets header with given name and value
 func (res *Response) Header(key string, value string) {
 	res.Headers[key] = value
 }
 
-// Response.SetCookie(c *Cookie) sets cookie, it takes data from cookie object
+// SetCookie (c *Cookie) sets cookie, it takes data from cookie object
 func (res *Response) SetCookie(c *Cookie) {
 	if c.MaxAge == "" {
 		c.MaxAge = "86400"
@@ -70,19 +68,19 @@ func (res *Response) SetCookie(c *Cookie) {
 	res.Header("Set-Cookie", c.String())
 }
 
-// Response.DelCookie(name string) immediately deletes cookie
+// DelCookie (name string) immediately deletes cookie
 func (res *Response) DelCookie(name string) {
-	res.Header("Set-Cookie", name + "=0; Max-Age=0")
+	res.Header("Set-Cookie", name+"=0; Max-Age=0")
 }
 
-// Response.Redirect(to stirng) redirect user to given path
+// Redirect (to stirng) redirect user to given path
 func (res *Response) Redirect(to string) {
 	res.Statuscode = 301
 	res.Statusmsg = "Moved Permanently"
 	res.Header("location", to)
 }
 
-// Response.Error(status []string) sends response with error to client
+// Error (status []string) sends response with error to client
 func (res *Response) Error(status [3]string) {
 	res.Proto = "HTTP/1.1"
 	res.Statuscode, _ = strconv.Atoi(status[0])
@@ -97,7 +95,7 @@ func (res *Response) Error(status [3]string) {
 	res.socket.Close()
 }
 
-// Response.Send(body string) sends data to client
+// Send (body string) sends data to client
 func (res *Response) Send(body string) {
 	res.Proto = "HTTP/1.1"
 	if res.Statuscode == 0 {
@@ -114,7 +112,7 @@ func (res *Response) Send(body string) {
 	res.socket.Write([]byte(res.toString()))
 }
 
-// Response.SendFile(path string) (error) sends file to client
+// SendFile (path string) (error) sends file to client
 func (res *Response) SendFile(path string) error {
 	res.Proto = "HTTP/1.1"
 	if res.Statuscode == 0 {
@@ -134,7 +132,7 @@ func (res *Response) SendFile(path string) error {
 		}
 		body.ReadFrom(file)
 		res.server.FileCache.Set(path, body.Bytes())
-		go func(){
+		go func() {
 			for {
 				if res.server.Config.CacheMaxAge == 0 {
 					return
@@ -144,7 +142,7 @@ func (res *Response) SendFile(path string) error {
 			}
 		}()
 	}
-	
+
 	res.body = body.String()
 	res.Header("Server", "GoExpress")
 	res.Header("Date", time.Now().In(time.FixedZone("GMT", 0)).Format(time.RFC1123))

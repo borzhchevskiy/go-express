@@ -1,19 +1,20 @@
-package GoExpress
+package goexpress
 
 import (
-	"time"
 	"strings"
+	"time"
 )
 
+// Cookie type
 type Cookie struct {
-	Name       string
-	Value      string
-	Path       string
-	Domain     string
-	Expires    time.Time
-	MaxAge     string
-	Secure     bool
-	HttpOnly   bool
+	Name     string
+	Value    string
+	Path     string
+	Domain   string
+	Expires  time.Time
+	MaxAge   string
+	Secure   bool
+	HTTPOnly bool
 }
 
 // Cookie.String() returns a string, put it to Set-Cookie header
@@ -36,7 +37,7 @@ func (c *Cookie) String() string {
 		b.WriteString("; Max-Age=")
 		b.WriteString(c.MaxAge)
 	}
-	if c.HttpOnly {
+	if c.HTTPOnly {
 		b.WriteString("; HttpOnly")
 	}
 	if c.Secure {
