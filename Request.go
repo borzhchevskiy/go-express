@@ -1,6 +1,7 @@
 package goexpress
 
 import (
+	"errors"
 	"strings"
 	"sync"
 )
@@ -21,14 +22,14 @@ var requestPool = sync.Pool{
 	},
 }
 
-// getRequest(request string) (req *Request, closed bool, err bool) parses type, path, protocol, headers from RAW_REQUEST and returns Request object
-func getRequest(request string) (req *Request, closed bool, err bool) {
+// getRequest(request string) (req Request, closed bool, err bool) parses type, path, protocol, headers from RAW_REQUEST and returns Request object
+func getRequest(request string) (req *Request, closed bool, err error) {
 	req = requestPool.Get().(*Request)
 	splittedReq := strings.Split(request, "\r\n")
 	headers := make(map[string]string)
 	reqFirstLn := strings.Split(splittedReq[0], " ")
 	if len(reqFirstLn) < 3 {
-		err = true
+		err = errors.New("reqFirstLn < 3")
 		return
 	}
 	req.Type = reqFirstLn[0]

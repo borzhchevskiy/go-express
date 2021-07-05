@@ -1,6 +1,8 @@
 package goexpress
 
 import (
+	// _ "net/http/pprof"
+	// "net/http"
 	"crypto/tls"
 	"github.com/borzhchevskiy/go-express/internal/static"
 	hmap "github.com/cornelk/hashmap"
@@ -30,23 +32,22 @@ type Server struct {
 	Middleware []func(req *Request, res *Response)
 	GET        [][]interface{}
 	POST       [][]interface{}
-	FileCache  *hmap.HashMap
-	Config     *Config
+	FileCache  hmap.HashMap
+	Config     Config
 }
 
-// Express (cfg *Config) (*Server) returns a Server object
-func Express(cfg *Config) *Server {
-	s := &Server{
+// Express (cfg *Config) (Server) returns a Server object
+func Express(cfg Config) Server {
+	return Server{
 		Host:       cfg.Host,
 		Port:       cfg.Port,
 		STATIC:     make(map[string]string),
 		Middleware: make([]func(req *Request, res *Response), 0),
 		GET:        make([][]interface{}, 0),
 		POST:       make([][]interface{}, 0),
-		FileCache:  &hmap.HashMap{},
+		FileCache:  hmap.HashMap{},
 		Config:     cfg,
 	}
-	return s
 }
 
 // Use (middleware func(req *Request, res *Response)) appends given middleware to server
@@ -56,6 +57,9 @@ func (s *Server) Use(middleware func(req *Request, res *Response)) {
 
 // Listen () (error) listens for connections
 func (s *Server) Listen() error {
+	// go func() {
+	// 	http.ListenAndServe(":1234", nil)
+	// }()
 	var err error
 	s.Socket, err = net.Listen("tcp4", s.Host+":"+strconv.Itoa(s.Port))
 	if err != nil {
@@ -129,12 +133,12 @@ func (s *Server) serveClient(c net.Conn, reuse int) {
 		reuse = 1024
 	}
 	for i := 0; i < reuse; i++ {
-		buf := make([]byte, 1024)
+		buf := make([]byte, 256)
 		c.Read(buf)
 		req, closed, err := getRequest(string(buf))
 		res := getResponse(c, s)
-		if err == true {
-			res.Error(res.BadRequest("Cannot Proceed " + req.Path + "\nBad Request"))
+		if err != nil {
+			res.Error(res.BadRequest("Cannot Proceed " + req.Path + "\nBad *Request"))
 			return
 		}
 		if closed {
@@ -161,12 +165,12 @@ func (s *Server) serveClient(c net.Conn, reuse int) {
 	if finished {
 		c.Close()
 	} else {
-		buf := make([]byte, 1024)
+		buf := make([]byte, 256)
 		c.Read(buf)
 		req, _, err := getRequest(string(buf))
 		res := getResponse(c, s)
-		if err == true {
-			res.Error(res.BadRequest("Cannot Proceed " + req.Path + "\nBad Request"))
+		if err != nil {
+			res.Error(res.BadRequest("Cannot Proceed " + req.Path + "\nBad *Request"))
 			return
 		}
 		res.Header("Connection", "close")

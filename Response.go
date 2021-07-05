@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"github.com/borzhchevskiy/go-express/internal/status"
 	hmap "github.com/cornelk/hashmap"
-	"github.com/gabriel-vasile/mimetype"
 	"net"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -77,7 +77,7 @@ func (res *Response) DelCookie(name string) {
 func (res *Response) Redirect(to string) {
 	res.Statuscode = 301
 	res.Statusmsg = "Moved Permanently"
-	res.Header("location", to)
+	res.Header("Location", to)
 }
 
 // Error (status []string) sends response with error to client
@@ -88,7 +88,7 @@ func (res *Response) Error(status [3]string) {
 	res.body = status[2]
 	res.Header("Server", "GoExpress")
 	res.Header("Date", time.Now().In(time.FixedZone("GMT", 0)).Format(time.RFC1123))
-	res.Header("Content-Type", mimetype.Detect([]byte(res.body)).String())
+	res.Header("Content-Type", http.DetectContentType([]byte(res.body)))
 	res.Header("Content-Length", strconv.Itoa(len([]byte(res.body))))
 	res.Header("Connection", "close")
 	res.socket.Write([]byte(res.toString()))
@@ -107,7 +107,7 @@ func (res *Response) Send(body string) {
 	res.body = body
 	res.Header("Server", "GoExpress")
 	res.Header("Date", time.Now().In(time.FixedZone("GMT", 0)).Format(time.RFC1123))
-	res.Header("Content-Type", mimetype.Detect([]byte(res.body)).String())
+	res.Header("Content-Type", http.DetectContentType([]byte(res.body)))
 	res.Header("Content-Length", strconv.Itoa(len([]byte(res.body))))
 	res.socket.Write([]byte(res.toString()))
 }
@@ -138,7 +138,7 @@ func (res *Response) SendFile(path string) error {
 					return
 				}
 				time.Sleep(time.Duration(res.server.Config.CacheMaxAge) * time.Second)
-				res.server.FileCache = &hmap.HashMap{}
+				res.server.FileCache = hmap.HashMap{}
 			}
 		}()
 	}
@@ -146,7 +146,7 @@ func (res *Response) SendFile(path string) error {
 	res.body = body.String()
 	res.Header("Server", "GoExpress")
 	res.Header("Date", time.Now().In(time.FixedZone("GMT", 0)).Format(time.RFC1123))
-	res.Header("Content-Type", mimetype.Detect([]byte(res.body)).String())
+	res.Header("Content-Type", http.DetectContentType([]byte(res.body)))
 	res.Header("Content-Length", strconv.Itoa(len([]byte(res.body))))
 	res.socket.Write([]byte(res.toString()))
 	return nil
