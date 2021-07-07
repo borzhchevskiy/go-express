@@ -49,10 +49,6 @@ func getRequest(request string) (req *Request, closed bool, err error) {
 	req.Path = path
 	req.Proto = strings.Split(splittedReq[0], " ")[2]
 	req.Headers = headers
-	if len(strings.Split(req.Path, "/")) != 0 && len(strings.Split(req.Path, "/")) != 2 {
-		splittedPath := strings.Split(req.Path, "/")
-		splittedPath = splittedPath[1 : len(splittedPath)-1]
-	}
 	if req.Type == "POST" {
 		body := make(map[string]string)
 		for _, v := range strings.Split(splittedReq[bodyPos+3 : bodyPos+4][0], "&") {

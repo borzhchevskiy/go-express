@@ -4,13 +4,13 @@ import (
 	// _ "net/http/pprof"
 	// "net/http"
 	"crypto/tls"
+	"net"
+	"strconv"
+
 	"github.com/borzhchevskiy/go-express/internal/static"
 	hmap "github.com/cornelk/hashmap"
 	"github.com/joomcode/errorx"
 	pathToRegexp "github.com/soongo/path-to-regexp"
-	"net"
-	"os"
-	"strconv"
 )
 
 // Config type
@@ -64,14 +64,13 @@ func (s *Server) Listen() error {
 	s.Socket, err = net.Listen("tcp4", s.Host+":"+strconv.Itoa(s.Port))
 	if err != nil {
 		return errorx.Decorate(err, "failed to start server")
-		os.Exit(1)
+
 	}
 	for {
 		c, _ := s.Socket.Accept()
 		go s.serveClient(c, s.Config.MaxReuseConn)
 	}
-	s.Socket.Close()
-	return nil
+
 }
 
 // ListenTLS (certificate string, key string) listens for connections, and process it with tls
@@ -79,14 +78,14 @@ func (s *Server) ListenTLS(certificate string, key string) error {
 	cert, err := tls.LoadX509KeyPair(certificate, key)
 	if err != nil {
 		return errorx.Decorate(err, "failed to load tls keys")
-		os.Exit(1)
+
 	}
 	config := &tls.Config{Certificates: []tls.Certificate{cert}}
 
 	sock, err := tls.Listen("tcp4", s.Host+":"+strconv.Itoa(s.Port), config)
 	if err != nil {
 		return errorx.Decorate(err, "failed to start server")
-		os.Exit(1)
+
 	}
 
 	for {
@@ -96,17 +95,16 @@ func (s *Server) ListenTLS(certificate string, key string) error {
 		}
 		go s.serveClient(c, s.Config.MaxReuseConn)
 	}
-	sock.Close()
-	return nil
+
 }
 
 // Static (path string, realPath string) serves static files
 func (s *Server) Static(path string, realPath string) {
 	if path[len(path)-1] == []byte("/")[0] {
-		path = string(path[:len(path)-1])
+		path = path[:len(path)-1]
 	}
 	if realPath[len(realPath)-1] == []byte("/")[0] {
-		realPath = string(realPath[:len(realPath)-1])
+		realPath = realPath[:len(realPath)-1]
 	}
 	s.STATIC[path] = realPath
 }
@@ -127,6 +125,7 @@ func (s *Server) Post(path string, handler func(req *Request, res *Response)) {
 	s.POST = append(s.POST, []interface{}{match, handler})
 }
 
+//goland:noinspection GoNilness,GoNilness
 func (s *Server) serveClient(c net.Conn, reuse int) {
 	var finished bool
 	if reuse == 0 {
