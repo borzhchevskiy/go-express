@@ -2,8 +2,6 @@ package goexpress
 
 import (
 	"bytes"
-	"github.com/borzhchevskiy/go-express/internal/status"
-	hmap "github.com/cornelk/hashmap"
 	"net"
 	"net/http"
 	"os"
@@ -11,6 +9,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/borzhchevskiy/go-express/internal/status"
+	hmap "github.com/cornelk/hashmap"
 )
 
 // Response type
@@ -61,7 +62,7 @@ func (res *Response) Header(key string, value string) {
 }
 
 // SetCookie (c *Cookie) sets cookie, it takes data from cookie object
-func (res *Response) SetCookie(c *Cookie) {
+func (res *Response) SetCookie(c Cookie) {
 	if c.MaxAge == "" {
 		c.MaxAge = "86400"
 	}

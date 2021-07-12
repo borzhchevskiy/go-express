@@ -1,17 +1,26 @@
 package goexpress
 
 import (
-	// _ "net/http/pprof"
-	// "net/http"
 	"crypto/tls"
 	"net"
+
+	// "net/http"
+	// _ "net/http/pprof"
 	"strconv"
+	"unsafe"
 
 	"github.com/borzhchevskiy/go-express/internal/static"
 	hmap "github.com/cornelk/hashmap"
 	"github.com/joomcode/errorx"
 	pathToRegexp "github.com/soongo/path-to-regexp"
 )
+
+type handler func(req *Request, res *Response)
+
+type route struct {
+	Match   func(string) (*pathToRegexp.MatchResult, error)
+	Handler handler
+}
 
 // Config type
 type Config struct {
@@ -29,9 +38,9 @@ type Server struct {
 	Port       int
 	Socket     net.Listener
 	STATIC     map[string]string
-	Middleware []func(req *Request, res *Response)
-	GET        [][]interface{}
-	POST       [][]interface{}
+	Middleware []handler
+	GET        []route
+	POST       []route
 	FileCache  hmap.HashMap
 	Config     Config
 }
@@ -42,16 +51,16 @@ func Express(cfg Config) Server {
 		Host:       cfg.Host,
 		Port:       cfg.Port,
 		STATIC:     make(map[string]string),
-		Middleware: make([]func(req *Request, res *Response), 0),
-		GET:        make([][]interface{}, 0),
-		POST:       make([][]interface{}, 0),
+		Middleware: make([]handler, 0),
+		GET:        make([]route, 0),
+		POST:       make([]route, 0),
 		FileCache:  hmap.HashMap{},
 		Config:     cfg,
 	}
 }
 
 // Use (middleware func(req *Request, res *Response)) appends given middleware to server
-func (s *Server) Use(middleware func(req *Request, res *Response)) {
+func (s *Server) Use(middleware handler) {
 	s.Middleware = append(s.Middleware, middleware)
 }
 
@@ -114,7 +123,7 @@ func (s *Server) Get(path string, handler func(req *Request, res *Response)) {
 	match := pathToRegexp.MustMatch(path, &pathToRegexp.Options{Decode: func(str string, token interface{}) (string, error) {
 		return pathToRegexp.DecodeURIComponent(str)
 	}})
-	s.GET = append(s.GET, []interface{}{match, handler})
+	s.GET = append(s.GET, route{match, handler})
 }
 
 // Post (path string, handler func(req *Request, res *Response)) appends given handler to POST routes
@@ -122,10 +131,9 @@ func (s *Server) Post(path string, handler func(req *Request, res *Response)) {
 	match := pathToRegexp.MustMatch(path, &pathToRegexp.Options{Decode: func(str string, token interface{}) (string, error) {
 		return pathToRegexp.DecodeURIComponent(str)
 	}})
-	s.POST = append(s.POST, []interface{}{match, handler})
+	s.POST = append(s.POST, route{match, handler})
 }
 
-//goland:noinspection GoNilness,GoNilness
 func (s *Server) serveClient(c net.Conn, reuse int) {
 	var finished bool
 	if reuse == 0 {
@@ -134,7 +142,7 @@ func (s *Server) serveClient(c net.Conn, reuse int) {
 	for i := 0; i < reuse; i++ {
 		buf := make([]byte, 256)
 		c.Read(buf)
-		req, closed, err := getRequest(string(buf))
+		req, closed, err := getRequest(*(*string)(unsafe.Pointer(&buf)))
 		res := getResponse(c, s)
 		if err != nil {
 			res.Error(res.BadRequest("Cannot Proceed " + req.Path + "\nBad *Request"))
@@ -166,7 +174,7 @@ func (s *Server) serveClient(c net.Conn, reuse int) {
 	} else {
 		buf := make([]byte, 256)
 		c.Read(buf)
-		req, _, err := getRequest(string(buf))
+		req, _, err := getRequest(*(*string)(unsafe.Pointer(&buf)))
 		res := getResponse(c, s)
 		if err != nil {
 			res.Error(res.BadRequest("Cannot Proceed " + req.Path + "\nBad *Request"))
@@ -192,12 +200,12 @@ func (s *Server) processRequest(closed bool, c net.Conn, req *Request, res *Resp
 		var Match *pathToRegexp.MatchResult
 		var found bool
 		for _, v := range s.GET {
-			Match, _ = v[0].(func(string) (*pathToRegexp.MatchResult, error))(req.Path)
+			Match, _ = v.Match(req.Path)
 			if Match != nil {
 				found = true
 				req.Params = Match.Params
 				s.callMiddleware(req, res)
-				v[1].(func(req *Request, res *Response))(req, res)
+				v.Handler(req, res)
 				if closed {
 					c.Close()
 					return nil
