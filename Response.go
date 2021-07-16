@@ -1,4 +1,4 @@
-package goexpress
+package balda
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/borzhchevskiy/go-express/internal/status"
+	"github.com/borzhchevskiy/balda/internal/status"
 	hmap "github.com/cornelk/hashmap"
 )
 
@@ -87,7 +87,7 @@ func (res *Response) Error(status [3]string) {
 	res.Statuscode, _ = strconv.Atoi(status[0])
 	res.Statusmsg = status[1]
 	res.body = status[2]
-	res.Header("Server", "GoExpress")
+	res.Header("Server", "Balda-Golang")
 	res.Header("Date", time.Now().In(time.FixedZone("GMT", 0)).Format(time.RFC1123))
 	res.Header("Content-Type", http.DetectContentType([]byte(res.body)))
 	res.Header("Content-Length", strconv.Itoa(len([]byte(res.body))))
@@ -106,7 +106,7 @@ func (res *Response) Send(body string) {
 		res.Statusmsg = "OK"
 	}
 	res.body = body
-	res.Header("Server", "GoExpress")
+	res.Header("Server", "Balda-Golang")
 	res.Header("Date", time.Now().In(time.FixedZone("GMT", 0)).Format(time.RFC1123))
 	res.Header("Content-Type", http.DetectContentType([]byte(res.body)))
 	res.Header("Content-Length", strconv.Itoa(len([]byte(res.body))))
@@ -145,7 +145,7 @@ func (res *Response) SendFile(path string) error {
 	}
 
 	res.body = body.String()
-	res.Header("Server", "GoExpress")
+	res.Header("Server", "Balda-Golang")
 	res.Header("Date", time.Now().In(time.FixedZone("GMT", 0)).Format(time.RFC1123))
 	res.Header("Content-Type", http.DetectContentType([]byte(res.body)))
 	res.Header("Content-Length", strconv.Itoa(len([]byte(res.body))))

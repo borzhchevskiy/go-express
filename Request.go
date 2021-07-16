@@ -1,4 +1,4 @@
-package goexpress
+package balda
 
 import (
 	"errors"
@@ -14,6 +14,7 @@ type Request struct {
 	Headers map[string]string
 	Body    map[string]string
 	Params  map[interface{}]interface{}
+	Static  bool
 }
 
 var requestPool = sync.Pool{

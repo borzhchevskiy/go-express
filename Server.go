@@ -1,4 +1,4 @@
-package goexpress
+package balda
 
 import (
 	"crypto/tls"
@@ -9,13 +9,17 @@ import (
 	"strconv"
 	"unsafe"
 
-	"github.com/borzhchevskiy/go-express/internal/static"
 	hmap "github.com/cornelk/hashmap"
 	"github.com/joomcode/errorx"
 	pathToRegexp "github.com/soongo/path-to-regexp"
 )
 
 type handler func(req *Request, res *Response)
+
+type staticRoute struct {
+	Match func(string) (*pathToRegexp.MatchResult, error)
+	Dir   string
+}
 
 type route struct {
 	Match   func(string) (*pathToRegexp.MatchResult, error)
@@ -37,7 +41,7 @@ type Server struct {
 	Host       string
 	Port       int
 	Socket     net.Listener
-	STATIC     map[string]string
+	STATIC     []staticRoute
 	Middleware []handler
 	GET        []route
 	POST       []route
@@ -50,10 +54,10 @@ func Express(cfg Config) Server {
 	return Server{
 		Host:       cfg.Host,
 		Port:       cfg.Port,
-		STATIC:     make(map[string]string),
-		Middleware: make([]handler, 0),
-		GET:        make([]route, 0),
-		POST:       make([]route, 0),
+		STATIC:     make([]staticRoute, 0, 8),
+		Middleware: make([]handler, 0, 8),
+		GET:        make([]route, 0, 8),
+		POST:       make([]route, 0, 8),
 		FileCache:  hmap.HashMap{},
 		Config:     cfg,
 	}
@@ -110,16 +114,22 @@ func (s *Server) ListenTLS(certificate string, key string) error {
 // Static (path string, realPath string) serves static files
 func (s *Server) Static(path string, realPath string) {
 	if path[len(path)-1] == []byte("/")[0] {
-		path = path[:len(path)-1]
+		path += "(.*)"
+	} else if path[len(path)-1] != []byte("*")[0] {
+		path += "/(.*)"
 	}
 	if realPath[len(realPath)-1] == []byte("/")[0] {
 		realPath = realPath[:len(realPath)-1]
 	}
-	s.STATIC[path] = realPath
+	match := pathToRegexp.MustMatch(path, &pathToRegexp.Options{Decode: func(str string, token interface{}) (string, error) {
+		return pathToRegexp.DecodeURIComponent(str)
+	}})
+	s.STATIC = append(s.STATIC, staticRoute{match, realPath})
 }
 
 // Get (path string, handler func(req *Request, res *Response)) appends given handler to GET routes
 func (s *Server) Get(path string, handler func(req *Request, res *Response)) {
+	path += "(\\?.*=.*)?"
 	match := pathToRegexp.MustMatch(path, &pathToRegexp.Options{Decode: func(str string, token interface{}) (string, error) {
 		return pathToRegexp.DecodeURIComponent(str)
 	}})
@@ -145,7 +155,7 @@ func (s *Server) serveClient(c net.Conn, reuse int) {
 		req, closed, err := getRequest(*(*string)(unsafe.Pointer(&buf)))
 		res := getResponse(c, s)
 		if err != nil {
-			res.Error(res.BadRequest("Cannot Proceed " + req.Path + "\nBad *Request"))
+			res.Error(res.BadRequest("Cannot Proceed " + req.Path + "\nBad Request"))
 			return
 		}
 		if closed {
@@ -177,7 +187,7 @@ func (s *Server) serveClient(c net.Conn, reuse int) {
 		req, _, err := getRequest(*(*string)(unsafe.Pointer(&buf)))
 		res := getResponse(c, s)
 		if err != nil {
-			res.Error(res.BadRequest("Cannot Proceed " + req.Path + "\nBad *Request"))
+			res.Error(res.BadRequest("Cannot Proceed " + req.Path + "\nBad Request"))
 			return
 		}
 		res.Header("Connection", "close")
@@ -185,20 +195,34 @@ func (s *Server) serveClient(c net.Conn, reuse int) {
 	}
 }
 
-func (s *Server) processRequest(closed bool, c net.Conn, req *Request, res *Response) error {
+func (s *Server) processRequest(closed bool, c net.Conn, req *Request, res *Response) {
 	switch req.Type {
 	case "GET":
-		Static, filePath := static.ProcessStatic(s.STATIC, req.Path)
-		if Static {
-			err := res.SendFile(filePath)
-			if err != nil {
-				res.Error(res.NotFound("Cannot Proceed " + req.Path + "\nFile Not Found"))
-				return errorx.Decorate(err, "failed to send static file")
-			}
-			return nil
-		}
 		var Match *pathToRegexp.MatchResult
 		var found bool
+		for _, v := range s.STATIC {
+			Match, _ = v.Match(req.Path)
+			if Match != nil {
+				found = true
+				if Match.Params[0] == "" {
+					res.Error(res.NotFound("Cannot Proceed " + req.Path + "\nNot Found, try doing this with file path"))
+					return
+				}
+				req.Static = true
+				req.Params = Match.Params
+				s.callMiddleware(req, res)
+				filepath := Match.Params[0].(string)
+				err := res.SendFile(v.Dir + "/" + filepath[:len(filepath)-1])
+				if err != nil {
+					res.Error(res.NotFound("Cannot Proceed " + req.Path + "\nNot Found"))
+				}
+				if closed {
+					c.Close()
+					return
+				}
+				return
+			}
+		}
 		for _, v := range s.GET {
 			Match, _ = v.Match(req.Path)
 			if Match != nil {
@@ -208,7 +232,7 @@ func (s *Server) processRequest(closed bool, c net.Conn, req *Request, res *Resp
 				v.Handler(req, res)
 				if closed {
 					c.Close()
-					return nil
+					return
 				}
 				continue
 			}
@@ -217,7 +241,6 @@ func (s *Server) processRequest(closed bool, c net.Conn, req *Request, res *Resp
 			res.Error(res.NotFound("Cannot Proceed " + req.Path + "\nNot Found"))
 		}
 	}
-	return nil
 }
 
 func (s *Server) callMiddleware(req *Request, res *Response) (*Request, *Response) {
